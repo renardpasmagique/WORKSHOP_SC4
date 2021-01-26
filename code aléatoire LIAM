@@ -1,0 +1,27 @@
+void Program() {
+		int nb_alea;
+		for (size_t n = 1; n < 120; n++) {
+			for (size_t i = 0; i < 30; i++) {
+				nb_alea = (rand() % 120) + 1;
+				//for (size_t i = 0; i < 120; i++)
+				//{
+				BuildPlotAtPosition(nb_alea, n, 0x30000072, false, false, 0);
+			};
+		};
+		for (size_t n = 1; n < 120; n++) {
+			for (size_t i = 0; i < 40; i++) {
+				nb_alea = (rand() % 120) + 1;
+				//for (size_t i = 0; i < 120; i++)
+				//{
+				BuildPlotAtPosition(n, nb_alea, 0x300000c1, false, false, 0);
+			};
+		};
+		//for (size_t n = 1; n < 120; n++) {
+			for (size_t i = 8; i < 90; i++) {
+				nb_alea = (rand() % 90) + 1;
+				for (size_t i = 0; i < 120; i++)
+				{
+				BuildPlotAtPosition(nb_alea, i, 0x4a57bf3a, false, false, 0);
+			};
+		};
+	}
