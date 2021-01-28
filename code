@@ -1,0 +1,1797 @@
+#include "../include/cISC4AdvisorSystem.h"
+#include "../include/cISC43DRender.h"
+#include "../include/cS3DCamera.h"
+#include "../include/cISC4App.h"
+#include "../include/cISC4BuildingDevelopmentSimulator.h"
+#include "../include/cISC4PoliceSimulator.h"
+#include "../include/cIGZApp.h"
+#include "../include/cIGZCheatCodeManager.h"
+#include "../include/cIGZFrameWork.h"
+#include "../include/cIGZMessage2.h"
+#include "../include/cIGZMessageServer2.h"
+#include "../include/cIGZMessage2Standard.h"
+#include "../include/cIGZMessageTarget2.h"
+#include "../include/cIGZMouseMessage.h"
+#include "../include/cIGZKeyMessage.h"
+#include "../include/cIGZWin.h"
+#include "../include/cIGZWinMgr.h"
+#include "../include/cISC4City.h"
+#include "../include/cISC4DisasterLayer.h"
+#include "../include/cISC4DisasterManager.h"
+#include "../include/cISC4Lot.h"
+#include "../include/cISC4LotManager.h"
+#include "../include/cISC4OccupantManager.h"
+#include "../include/cISC4LotConfiguration.h"
+#include "../include/cISC4LotConfigurationManager.h"
+#include "../include/cISC4Occupant.h"
+#include "../include/cISC4PollutionSimulator.h"
+#include "../include/cISC4SimGrid.h"
+#include "../include/cISC4View3DWin.h"
+#include "../include/cRZAutoRefCount.h"
+#include "../include/cRZBaseString.h"
+#include "../include/cRZCOMDllDirector.h"
+#include "../include/cRZPoint.h"
+#include "../include/cS3DCamera.h"
+#include "../include/cS3DVector3.h"
+#include "../include/GZCLSIDDefs.h"
+#include "../include/GZServPtrs.h"
+#include "../include/cISC4LotDeveloper.h"
+#include "../include/cISC4RegionalCity.h"
+#include "../BuildingID.h"
+#include "../include/cISC4BudgetSimulator.h"
+#include "../THMCTCPClient.h"
+#include <random>
+#include <iostream>
+#include <fstream>  
+#include <Windows.h>
+#include <thread>         // std::thread
+#include <chrono>
+#include <future>
+#include <limits.h>
+
+#include <string>
+#include <vector>
+#include <sstream>
+
+#define DEMOMSG(x) MessageBoxA(NULL, x, "cGZExampleDllDirector", MB_OK);
+
+
+static const uint32_t kExtraExtraCheatsPluginCOMDirectorID = 0x5b76862b;
+static const uint32_t kDisasterID_Riot = 0xca380b06;
+static const uint32_t kDisasterID_ToxicSpill = 0xebfb0404;
+static const uint32_t kGZIID_cIGZCheatCodeManager = 0xa1085722;
+static const uint32_t kGZIID_cIGZMouseMessage = 0x1a0c615f;
+static const uint32_t kGZIID_cISC4App = 0x26ce01c0;
+static const uint32_t kGZIID_cISC4DisasterInstance = 0x49b43f58;
+static const uint32_t kGZIID_cISC4LotManager = 0x681905bd;
+static const uint32_t kGZIID_cISC4View3DWin = -95964167;
+static const uint32_t kGZIID_cS3DCamera = 0xe9c6262a;
+
+static const uint32_t kGZWin_WinSC4App = 0x6104489a;
+static const uint32_t kGZWin_SC4View3DWin = 0x9a47b417;
+
+static const uint32_t kGZMSG_CheatIssued = 0x230e27ac;
+static const uint32_t kGZMSG_MouseMessage = 0xfa0c6390;
+
+static const uint32_t kCheatSievertBeGone = 0x9e0c0b4d;
+static const uint32_t kCheatChernobyl = 0x606a36f7;
+static const uint32_t kCheatUncivilDisobediece = 0x1bb93583;
+static const uint32_t kCheatHazmat = 0x3749433c;
+
+static const char* kszCheatSievertBeGone = "netconnect";
+static const char* kszCheatChernobyl = "test";
+static const char* kszCheatUncivilDisobedience = "UncivilDisobedience";
+static const char* kszCheatHazmat = "hazmat";
+
+static const uint32_t kcSC4ZoneDeveloper = 0x498F9B01;
+static const uint32_t cSC4SimGridSint8 = 0x49b9e603; // this is zone view grid we want to get 
+class CellID
+{
+public:
+	int32_t LID;
+};
+
+
+class cGZExtraExtraCheatsPluginCOMDirector : public cRZCOMDllDirector, public cIGZMessageTarget2
+{
+public:
+	/* Failing to explicitly delegate these methods results in some
+	   ambiguity when resolving which virtual methods to use: those
+	   from cIGZMessageTarget (which are pure abstract) or those from
+	   cRZCOMDllDirector, and the compiler will complain. */
+	bool QueryInterface(uint32_t riid, void** ppvObj) {
+		if (riid == GZCLSID::kcIGZMessageTarget2) {
+			*ppvObj = static_cast<cIGZMessageTarget2*>(this);
+			AddRef();
+			return true;
+		}
+		else {
+			return cRZCOMDllDirector::QueryInterface(riid, ppvObj);
+		}
+	}
+
+	uint32_t AddRef(void) {
+		return cRZCOMDllDirector::AddRef();
+	}
+
+	uint32_t Release(void) {
+		return cRZCOMDllDirector::Release();
+	}
+
+	uint32_t GetDirectorID() const {
+		return kExtraExtraCheatsPluginCOMDirectorID;
+	}
+
+	bool DoMessage(cIGZMessage2* pMessage) {
+		if (pMessage->GetType() == kGZMSG_CheatIssued) {
+			cIGZMessage2Standard* pStandardMsg = static_cast<cIGZMessage2Standard*>(pMessage);
+
+			uint32_t dwCheatID = pStandardMsg->GetData1();
+			cIGZString* pszCheatData = static_cast<cIGZString*>(pStandardMsg->GetVoid2());
+
+			ProcessCheat(dwCheatID, pszCheatData);
+		}
+
+		else if (pMessage->GetType() == kGZMSG_MouseMessage) {
+			cIGZMouseMessage* pMouseMsg;
+			if (pMessage->QueryInterface(kGZIID_cIGZMouseMessage, (void**)&pMouseMsg)) { // try to hook that message 
+				m_sMousePos = pMouseMsg->Position();
+
+				if (pMouseMsg->EventType() == 10)// 7 is mouse down . 10 is mouse up .
+				{
+					NetSendAtClick();
+				}
+
+				pMouseMsg->Release();
+				// we could trigger a function here if mouse up (just check again pMouseMSg id) 
+			}
+		}
+		cIGZMessage2Standard* pStandardMsg = static_cast<cIGZMessage2Standard*>(pMessage);
+		// trying to hook occupant insert etc. this is not occupant insert or anything else 
+		if (pMessage->GetType() == 0x99ef1142 || pMessage->GetType() == 0x99ef1143) // occupant insert ou occupant remove
+		{
+			cISC4Occupant* pOccupant = (cISC4Occupant*)pStandardMsg->GetVoid1();
+		}
+
+
+
+		return true;
+	}
+
+	bool PreAppInit() {
+		return true;
+	}
+
+	bool PostAppInit() {
+		cIGZFrameWork* const pFramework = RZGetFrameWork();
+		if (pFramework) {
+			cIGZApp* const pApp = pFramework->Application();
+			if (pApp) {
+				cISC4App* pISC4App;
+				if (pApp->QueryInterface(kGZIID_cISC4App, (void**)&pISC4App)) {
+					cIGZCheatCodeManager* pCheatMgr = pISC4App->GetCheatCodeManager();
+					if (pCheatMgr && pCheatMgr->QueryInterface(kGZIID_cIGZCheatCodeManager, (void**)&pCheatMgr)) {
+						RegisterCheats(pCheatMgr);
+					}
+				}
+			}
+		}
+
+		cIGZMessageServer2Ptr pMsgServ;
+		if (pMsgServ) {
+			pMsgServ->AddNotification(this, kGZMSG_MouseMessage);
+		}
+
+		return true;
+	}
+
+	bool OnStart(cIGZCOM* pCOM) {
+		cIGZFrameWork* const pFramework = RZGetFrameWork();
+		if (pFramework) {
+			if (pFramework->GetState() < cIGZFrameWork::kStatePreAppInit) {
+				pFramework->AddHook(this);
+			}
+			else {
+				PreAppInit();
+			}
+		}
+
+		return true;
+	}
+
+	bool AbortiveQuit() {
+		return true;
+	}
+
+protected:
+	bool ProcessCheat(uint32_t dwCheatID, cIGZString const* szCheatText) {
+		switch (dwCheatID) {
+		case kCheatSievertBeGone: return NetConnect();//return SetAllRadiation(false);
+		case kCheatChernobyl: return ScriptTest();//return SetAllRadiation(true);
+		case kCheatUncivilDisobediece: return TryToStartDisasterAtMouseLocation(kDisasterID_Riot);
+		case kCheatHazmat: return TryToStartDisasterAtMouseLocation(kDisasterID_ToxicSpill);
+		default: return false;
+		}
+	}
+
+	void RegisterCheats(cIGZCheatCodeManager* pCheatMgr) {
+		// The message ID parameter has no effect, so just pass zero like
+		// the rest of the game does.
+		pCheatMgr->AddNotification2(this, 0);
+		pCheatMgr->RegisterCheatCode(kCheatSievertBeGone, cRZBaseString(kszCheatSievertBeGone));
+		pCheatMgr->RegisterCheatCode(kCheatChernobyl, cRZBaseString(kszCheatChernobyl));
+		pCheatMgr->RegisterCheatCode(kCheatUncivilDisobediece, cRZBaseString(kszCheatUncivilDisobedience));
+		pCheatMgr->RegisterCheatCode(kCheatHazmat, cRZBaseString(kszCheatHazmat));
+	}
+
+protected:
+	bool SetAllRadiation(bool bSetRadioactive) {
+		/* try to write some file */
+
+
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4PollutionSimulator* pPollution = pCity->GetPollutionSimulator();
+		if (!pPollution) return false;
+
+		cISC4SimGrid<short>* pGrid = pPollution->GetPollutionGrid(3);
+		if (!pGrid) return false;
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+				pPollution->SetIsRadioactive(i, j, bSetRadioactive);
+			}
+		}
+
+		return true;
+	}
+
+	bool TryToStartDisasterAtMouseLocation(uint32_t dwDisasterType) {
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cIGZWin* pParentWin = pApp->GetMainWindow();
+		if (!pParentWin) return false;
+
+		pParentWin = pParentWin->GetChildWindowFromID(kGZWin_WinSC4App);
+		if (!pParentWin) return false;
+
+		cISC4View3DWin* pWin = NULL;
+		if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, (void**)&pWin)) return false;
+
+		cISC4DisasterLayer* pDisasterLayer = pCity->GetDisasterLayer();
+		if (!pDisasterLayer) return false;
+
+		cISC4DisasterManager* pDisasterManager = pDisasterLayer->GetDisasterManager(dwDisasterType);
+		if (!pDisasterManager) return false;
+
+		float fPosition[3];
+		int32_t nX, nZ;
+
+		pWin->PickTerrain(m_sMousePos.nX, m_sMousePos.nY, fPosition, false); // get terrain x y from mouse pos
+		pCity->PositionToCell(fPosition[0], fPosition[2], nX, nZ); // get cell from x y terrain
+
+
+		pDisasterManager->AttemptDisasterStart(nX, nZ);
+		return true;
+	}
+
+	bool GetRandomLotLocation(cISC4City* pCity, int32_t& nX, int32_t& nZ) {
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		cISC4Lot* pLot = pLotManager->GetRandomLot();
+		if (!pLot) { pLotManager->Release(); return false; }
+		if (!pLot->GetLocation(nX, nZ)) { pLotManager->Release(); return false; }
+		//pLotManager->DeleteLot(pLot); 
+		pLotManager->Release();
+		return true;
+	}
+
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----_-_-_-_-_-__-_-_-_-_-_-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----  NETWORK -----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----_-_-_-_-_-__-_-_-_-_-_-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+public:
+
+	/*
+	
+		Probleme potentiel :
+		Les Nouveaux Connectés paralysent le serveur avec la requete de mis a jour
+		faire un checksum si besoin
+		stdd::vector stack overflow
+
+		quelques idees pour la suite :
+		-> envoyer au clients le nombre de population. la gestion des taxes. largent
+	*/
+
+
+
+	void SerializeInt32(char(&buf)[4], int32_t val)
+	{
+		std::memcpy(buf, &val, 4);
+	}
+
+	int32_t ParseInt32(const char(&buf)[4])
+	{
+		int32_t val;
+		std::memcpy(&val, buf, 4);
+		return val;
+	}
+
+	bool NetConnect()
+	{
+
+		std::thread delay_thread(
+			[this]() {
+				this->InitNetwork();
+			}
+		);
+		delay_thread.detach();
+		SetUpMapData();
+		std::thread UpdateToNetwork(
+			[this]() {
+				this->ScanEntireRegion();
+			}
+		);
+		
+		UpdateToNetwork.detach();
+		RequestToServerFullUpdate();
+		//std::async(Program);
+		//td::future<std::string> resultFromDB = std::async(std::launch::async, Program, 0);
+		return true;
+	}
+
+	void SetUpMapData() // Just Updating MapData If Neede
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+				uint32_t ID = GetLotIDAtCellPosition(i, j);
+				// if this ID is not zero and this id was not in the array
+				// Put In The Array . Then Send It To The NetWork
+				if (ID != 0)
+				{
+					_mapData[i][j].LID = ID;
+				}
+
+			}
+		}
+
+	}
+	// send to serv we want the full map update
+	void RequestToServerFullUpdate()
+	{
+		// but beforerequesting _mapdata. This Need to be filled with current ID.
+		//std::string message = "u";
+		//client->Send(message);
+	}
+	void ScanEntireRegion()
+	{
+		return;
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		while (true)
+		{
+			Sleep(5000);
+			for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+				for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+					uint32_t ID = GetLotIDAtCellPosition(i, j);
+					// if this ID is not zero and this id was not in the array
+					// Put In The Array . Then Send It To The NetWork
+					if (_mapData[i][j].LID != ID) {
+
+						_mapData[i][j].LID = ID;
+						Test_NetBuildCmd(i, j, ID); // Probablement les messages peuvent se perdre
+					}
+
+				}
+			}
+			// un delay de 5 secondes pour eviter un trop grand bavardage
+		}
+	}
+
+	/* We will use a specific scheme for sending data command
+	   First byte will be a command header, eg if 0 it for building, if 1 it is for sync stuff etc .
+	  * send stuff to network ( as string packet )
+
+	*/
+	void NetSendAtClick() // just a void triggered when clicking
+	{
+		
+		if (!client->isConnected()) return;
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		cIGZWin* pParentWin = pApp->GetMainWindow();
+		if (!pParentWin) return;
+
+		pParentWin = pParentWin->GetChildWindowFromID(kGZWin_WinSC4App);
+		if (!pParentWin) return;
+
+		cISC4View3DWin* pWin = NULL;
+		if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, (void**)&pWin)) return;
+		float fPosition[3];
+		int32_t nX, nZ;
+
+		pWin->PickTerrain(m_sMousePos.nX, m_sMousePos.nY, fPosition, false); // get terrain x y from mouse pos
+		pCity->PositionToCell(fPosition[0], fPosition[2], nX, nZ); // get cell from x y terrain
+
+		uint32_t r = GetLotIDAtCellPosition(nX, nZ);
+		if (r > 0)
+		{
+			Test_NetBuildCmd(nX, nZ, r);
+		}
+
+	}
+
+	void Test_NetBuildCmd(uint32_t nX, uint32_t nY, uint32_t lotID, uint32_t Facing = 0)
+	{
+		
+		std::string message = "0" + std::to_string(nX) + ":" + std::to_string(nY) + ":" + std::to_string(lotID);
+		client->Send(message);
+
+	}
+	//bool BuildPlotAtPosition(int32_t x, int32_t y, int32_t dwLotID, bool showAnim, bool _override = false, uint32_t zoneType = 1, uint32_t Facing = 0)//0x30000030
+
+	void Test_Demolish(uint32_t nX, uint32_t nY)
+	{
+		std::string message = "1" + std::to_string(nX) + ":" + std::to_string(nY);
+		client->Send(message);
+	}
+	void Test_Explode(uint32_t nX, uint32_t nY)
+	{
+		std::string message = "2" + std::to_string(nX) + ":" + std::to_string(nY);
+		client->Send(message);
+	}
+
+
+
+	
+
+	void InitNetwork()
+	{
+		// connection au serveur
+		InitTCP();
+		std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
+
+	}
+
+
+	void ProccessNetMsg(std::string msg)
+	{
+
+			if (msg.size() > 0)
+			{
+				char header = msg.at(0); // get header 
+				msg.erase(0, 1); // removed it 
+				switch ( header) 
+				{
+				case '0':
+					std::vector<std::string> strings;
+					std::istringstream f(msg);
+					std::string s;
+					while (std::getline(f, s, ':')) {
+						strings.push_back(s);
+					}
+					if (strings.size() >= 3)
+					{
+						uint32_t A = stoul(strings[0]);
+						uint32_t B = stoul(strings[1]);
+						uint32_t C = stoul(strings[2]);
+						_mapData[A][B].LID = C; // update _map data to avoid larsen
+						BuildPlotAtPosition(A, B, C, false, true, 0); // last bool : do some secure . avoid overriding
+					}
+					WriteToLog(strings.size());
+					break;
+				
+				}
+				// clear NETQUEUE
+				WriteToLogB(msg);
+			}
+		
+
+	}
+
+
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----_-_-_-_-_-__-_-_-_-_-_-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----  OUR CODE START HERE -----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----_-_-_-_-_-__-_-_-_-_-_-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+
+	bool WriteToLogB(std::string  str)
+	{
+		std::ofstream foutput;
+		std::ifstream finput;
+		finput.open("scriptlog.txt");
+		foutput.open("scriptlog.txt", std::ios::app);
+
+		if (finput.is_open())
+		{
+			foutput << str;
+			foutput << "\n";
+
+		}
+		finput.close();
+		foutput.close();
+		return true;
+	}
+
+	bool WriteToLog(uint32_t et = 0, uint32_t kf = 0, uint32_t wd = 0, uint32_t x = 0, uint32_t y = 0)
+	{
+		char myString[50] = "";
+		sprintf(myString, "%d %d %d %d %d", (long)et, (long)kf, (long)wd, (long)x, (long)y);
+		std::ofstream foutput;
+		std::ifstream finput;
+		finput.open("scriptlog.txt");
+		foutput.open("scriptlog.txt", std::ios::app);
+
+		if (finput.is_open())
+		{
+			foutput << "\n";
+			foutput << myString;
+			foutput << "\n";
+
+		}
+
+
+		finput.close();
+		foutput.close();
+		return true;
+
+	}
+
+	//( je dois utilsier les virtual key codes documentées ici : https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+	bool KeyDown(WORD keycode)
+	{
+		INPUT ip;
+		ip.type = INPUT_KEYBOARD;
+		ip.ki.wScan = 0; // hardware scan code for key
+		ip.ki.time = 0;
+		ip.ki.dwExtraInfo = 0;
+		ip.ki.wVk = keycode; // virtual-key code for the "a" key
+		ip.ki.dwFlags = 0; // 0 for key press
+		SendInput(1, &ip, sizeof(INPUT));
+		return true;
+	}
+	bool KeyUp(WORD keycode)
+	{
+		INPUT ip;
+		ip.type = INPUT_KEYBOARD;
+		ip.ki.wScan = 0; // hardware scan code for key
+		ip.ki.time = 0;
+		ip.ki.dwExtraInfo = 0;
+		ip.ki.wVk = keycode; // virtual-key code for the "a" key
+		ip.ki.dwFlags = KEYEVENTF_KEYUP; // 0 for key press
+		SendInput(1, &ip, sizeof(INPUT));
+		return true;
+	}
+	bool LeftClick()
+	{
+		mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+		return true;
+	}
+	bool LeftMouseDown()
+	{
+		mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+		return true;
+	}
+	bool LeftMouseUp()
+	{
+		mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+		return true;
+	}
+
+	// variable HOOK
+	int32_t GetCityPopulation() // [OK]
+	{
+		cISC4AppPtr pApp;
+		cISC4RegionalCity* regCity = pApp->GetRegionalCity();
+		int32_t result = regCity->GetPopulation();
+		return result;
+	}
+
+	int32_t GetCityBudget() // [OK]
+	{
+		cISC4AppPtr pApp;
+		cISC4RegionalCity* regCity = pApp->GetRegionalCity();
+		int32_t result = regCity->GetBudget();
+		return result;
+	}
+
+	int64_t GetTotalFunds() {
+
+		cISC4AppPtr pApp;
+		if (!pApp) return 0;
+		cISC4City* pCity = pApp->GetCity();
+
+		if (!pCity) return 0;
+
+		cISC4BudgetSimulator* budgSim = pCity->GetBudgetSimulator();
+		if (!budgSim)return 0;
+		int64_t result = budgSim->GetTotalFunds();
+		return result;
+
+	}
+
+	bool BuildPlotAtPosition(int32_t x, int32_t y, int32_t dwLotID, bool showAnim, bool _override = false, uint32_t zoneType = 1, uint32_t Facing = 0)//0x30000030
+	{
+		if (_override) { DemolishLotAtCellPosition(x, y, true); } // remove lot if needed
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		cISC4LotConfigurationManager* pConfigManager = pCity->GetLotConfigurationManager();
+		if (!pConfigManager) return false;
+
+		cISC4BuildingDevelopmentSimulator* pBDevSim = pCity->GetBuildingDevelopmentSimulator();
+		if (!pBDevSim) return false;
+
+		cISC4LotDeveloper* pDeveloper = pBDevSim->GetLotDeveloper();
+		if (!pDeveloper) return false;
+
+		// well... before building it we should be sure than there is nothing at this pos. if so .  
+		cISC4LotConfiguration* pConfig = pConfigManager->GetLotConfiguration(dwLotID);
+		if (!pConfig) return false;
+
+		uint32_t sX = 0;
+		uint32_t sY = 0;
+		pConfig->GetSize(sX, sY);
+
+
+		cISC4Lot* pLot = NULL;
+		if (pLotManager->CreateLot(x, y, sX, sY, Facing, pLot)) // mettre un eolienne a 0 0 ( sX et sY sont les dimensions -  )
+		{
+
+			pLot->SetLotConfiguration(pConfig);
+
+			//pLot->UpdateZoneType(); // try to update the zone type
+			// if true, do an anim
+			// if false, instant put an anime of building ... uint32 inconnu
+			pDeveloper->ConstructDefaultLot(pLot, pConfig, 0, showAnim);
+		}
+		int8_t* ptr = (int8_t*)pLot;
+		ptr += 129;
+		*ptr = zoneType;
+
+		pLotManager->Release();
+		return true;
+
+
+	}
+	bool SetCursorAtCellPosition(uint32_t cX, uint32_t cY)
+	{
+		SetCursorPos(_cellMatrix[cX][cY].nX, _cellMatrix[cX][cY].nY);
+		return true;
+	}
+
+	bool GetCellMatrix() // get matrix from all cells. Probablement necessitera de faire plusieurs decoupe si map plus grande! 
+	{
+
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cIGZWin* pParentWin = pApp->GetMainWindow();
+		if (!pParentWin) return false;
+
+		pParentWin = pParentWin->GetChildWindowFromID(kGZWin_WinSC4App);
+		if (!pParentWin) return false;
+
+		cISC4View3DWin* pWin = NULL;
+		if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, (void**)&pWin)) return false;
+
+		float fPosition[3];
+		int32_t nX, nZ;
+
+		for (int32_t x = 0; x < 1024; x++) // screen dim
+		{
+
+			for (int32_t y = 0; y < 768; y++)
+			{
+
+				pWin->PickTerrain(x, y, fPosition, false); // get terrain x y from mouse pos
+				pCity->PositionToCell(fPosition[0], fPosition[2], nX, nZ); // get cell from x y terrain
+				cRZPoint posHandler;
+				posHandler.nX = x;
+				posHandler.nY = y;
+				_cellMatrix[nX][nZ] = posHandler;
+			}
+
+		}
+		return true;
+	}
+
+	bool CenterView()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cIGZWin* pParentWin = pApp->GetMainWindow();
+		if (!pParentWin) return false;
+
+		pParentWin = pParentWin->GetChildWindowFromID(kGZWin_WinSC4App);
+		if (!pParentWin) return false;
+
+		cISC4View3DWin* pWin = NULL;
+		if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, (void**)&pWin)) return false;
+
+		// set max zoom ! 
+		uint32_t zc = 0;
+		while (pWin->CanZoomOut())
+		{
+			pWin->ZoomOut();
+			zc++;
+		}
+		/*
+		Sleep(2000);
+		for (uint32_t i = 0 ; i < zc; i++ ) // can be used to get back to latest view
+		{
+			pWin->ZoomIn();
+		}
+		*/
+		//pWin->SetLastSelectedBuilding()
+		pWin->SetScrolling(false, -200, 0); // [not working actually]
+
+		cISC43DRender* renderer = pWin->GetRenderer();
+		if (!renderer) { return false; }
+		cS3DCamera* cam = renderer->GetCamera();
+
+		// try to put the cam at 0 x [not working actually] can get camera position but not reenter value ... 
+		if (!cam) { return false; }
+		cam->vPos.fX = 0.0f; // dont seem to work 
+		cam->vPos.fY = 0.0f;
+		cam->vPos.fZ = 0.0f;
+
+		renderer->SetCamera(cam);
+		cam->Release();
+		renderer->Release();
+		pWin->Release();
+		//pWin->MinimizeUI(true); // minimize the ui ! ( not working ) 
+
+		// we absultely need to know when zoomed out is done... because its clarly not trigger before next instructions... 
+		SetCursorPos(56, 658); // click on the map rough stuff
+		LeftClick();
+		return true;
+	}
+
+
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----SHORTCUT && STUFF-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+
+	void DragBuildingWithHotKey(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h, int MainKey, int CtrlKeyA = 0, int CtrlKeyB = 0)
+	{
+		if (CtrlKeyA != 0)
+		{
+			KeyDown(CtrlKeyA);
+		}
+		if (CtrlKeyB != 0)
+		{
+			KeyDown(CtrlKeyB);
+		}
+		KeyDown(MainKey);
+
+		if (CtrlKeyA != 0)
+		{
+			KeyUp(CtrlKeyA);
+		}
+		if (CtrlKeyB != 0)
+		{
+			KeyUp(CtrlKeyB);
+		}
+		KeyUp(MainKey);
+
+		Sleep(200);
+
+		uint32_t bX = aX + w;
+		uint32_t bY = aY + h;
+		SetCursorAtCellPosition(aX, aY); // if 0 0 abort...
+		LeftMouseDown();
+		SetCursorAtCellPosition(bX, bY);
+		Sleep(100);
+		LeftMouseUp();
+
+	}
+	void PutBuildingWithHotKey(uint32_t aX, uint32_t aY, int MainKey, int CtrlKeyA = 0, int CtrlKeyB = 0)
+	{
+
+		if (CtrlKeyA != 0)
+		{
+			KeyDown(CtrlKeyA);
+		}
+		if (CtrlKeyB != 0)
+		{
+			KeyDown(CtrlKeyB);
+		}
+		KeyDown(MainKey);
+
+		if (CtrlKeyA != 0)
+		{
+			KeyUp(CtrlKeyA);
+		}
+		if (CtrlKeyB != 0)
+		{
+			KeyUp(CtrlKeyB);
+		}
+		KeyUp(MainKey);
+
+		Sleep(200);
+
+		SetCursorAtCellPosition(aX, aY);
+		LeftMouseDown();
+		Sleep(100);
+		LeftMouseUp();
+
+	}
+
+	void PutRoad(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// R
+		DragBuildingWithHotKey(aX, aY, w, h, 0x52);
+	}
+	void PutStreet(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// ALT R
+		DragBuildingWithHotKey(aX, aY, w, h, 0x52, 0x12);
+
+	}
+	void PutAvenue(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// CTRL R
+		DragBuildingWithHotKey(aX, aY, w, h, 0x52, 0x11);
+
+	}
+	void PutElevatedHighWay(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// SHIFT R
+		DragBuildingWithHotKey(aX, aY, w, h, 0x52, 0xA0);
+	}
+
+	void PutRail(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// T
+		DragBuildingWithHotKey(aX, aY, w, h, 0x54);
+	}
+
+	void PutSubway(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// SHIFT T
+		DragBuildingWithHotKey(aX, aY, w, h, 0x54, 0xA0);
+	}
+	void PutElevatedRail(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// CTRL T
+		DragBuildingWithHotKey(aX, aY, w, h, 0x54, 0x11);
+	}
+	void PutPipe(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// I
+		DragBuildingWithHotKey(aX, aY, w, h, 0x49);
+	}
+	void PutPowerLine(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// L
+		DragBuildingWithHotKey(aX, aY, w, h, 0x4C);
+	}
+	void PutZoneLandFill(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		// J
+		DragBuildingWithHotKey(aX, aY, w, h, 0x4A);
+	}
+	void Bulldoze(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h) // delete ! 
+	{
+		// B
+		DragBuildingWithHotKey(aX, aY, w, h, 0x42);
+	}
+
+	void PutLDResidentialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//Q
+		DragBuildingWithHotKey(aX, aY, w, h, 0x51);
+	}
+	void PutMDResidentialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//W
+		DragBuildingWithHotKey(aX, aY, w, h, 0x57);
+	}
+	void PutHDResidentialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//E
+		DragBuildingWithHotKey(aX, aY, w, h, 0x45);
+	}
+	void PutLDCommercialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//A
+		DragBuildingWithHotKey(aX, aY, w, h, 0x41);
+	}
+	void PutMDCommercialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//S
+		DragBuildingWithHotKey(aX, aY, w, h, 0x53);
+	}
+	void PutHDCommercialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//D
+		DragBuildingWithHotKey(aX, aY, w, h, 0x44);
+	}
+	void PutLDIndustrialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//Z
+		DragBuildingWithHotKey(aX, aY, w, h, 0x5A);
+	}
+	void PutMDIndustrialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//X
+		DragBuildingWithHotKey(aX, aY, w, h, 0x58);
+	}
+	void PutHDIndustrialZone(uint32_t aX, uint32_t aY, uint32_t w, uint32_t h)
+	{
+		//C
+		DragBuildingWithHotKey(aX, aY, w, h, 0x43);
+	}
+
+	// -_--_-_-_-_-----_-_-_-_-_-_------_-_-_-_-_-_-----OUR CODE-----_-_-_-_-_--_-_-_-_-_-_------_-_-_-_-_---------_-_-_-_-_--
+	bool ScriptTest() // we dont have auto facing ... we dont have build ... 
+	{
+		//Program();
+		//std::thread t([this] { this->Program(); });
+		//t.join(); 
+		std::thread delay_thread(
+			[this]() {
+				this->Program();
+			}
+		);
+		delay_thread.detach();
+		//std::async(Program);
+		//td::future<std::string> resultFromDB = std::async(std::launch::async, Program, 0);
+		return true;
+	}
+
+	void LockCursor() // marche bien mais n'évite pas le scrolling 
+	{
+		RECT r = { 40, 40, 980, 720 };
+		ClipCursor(&r);
+	}
+	void UnLockCursor()
+	{
+		RECT r = { 0, 0, 1024, 768 };
+		ClipCursor(&r);
+	}
+
+	void DuplicateBuilding(uint32_t cX, uint32_t cY, uint32_t dX, uint32_t dY) //[OK]
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false);
+		if (!pLot) { pLotManager->Release(); return; }
+		cISC4LotConfiguration* pConfig = pLot->GetLotConfiguration();
+		if (!pConfig) return;
+		cISC4BuildingDevelopmentSimulator* pBDevSim = pCity->GetBuildingDevelopmentSimulator();
+		if (!pBDevSim) return;
+
+		cISC4LotDeveloper* pDeveloper = pBDevSim->GetLotDeveloper();
+		if (!pDeveloper) return;
+		uint32_t sX = 0;
+		uint32_t sY = 0;
+		pConfig->GetSize(sX, sY);
+
+		cISC4Lot* pLotB = NULL;
+
+		if (pLotManager->CreateLot(dX, dY, sX, sY, 0, pLotB))
+		{
+			pLotB->SetLotConfiguration(pConfig);
+			pLotB->SetFlags(pLot->GetFlags());
+			pLotB->UpdateZoneType();
+
+			// duplicate the flags .... 
+
+			pDeveloper->ConstructDefaultLot(pLotB, pConfig, 0, false);
+		}
+		pLotManager->Release();
+		pLot->Release();
+	}
+
+	uint32_t GetLotIDAtCellPosition(uint32_t cX, uint32_t cY) //[OK]
+	{
+
+		cISC4AppPtr pApp;
+		if (!pApp) return 0;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return 0;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return 0;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return 0;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return 0; }
+
+		cISC4LotConfiguration* pConfig = pLot->GetLotConfiguration();
+		if (!pConfig) return 0;
+
+		uint32_t result = pConfig->GetID();
+		//WriteToLog(result, cX, cY);
+		return result;
+
+	}
+	uint32_t GetZoneTypeAtCellPosition(uint32_t cX, uint32_t cY) //[OK]
+	{
+		// should be a valid LOT
+		cISC4AppPtr pApp;
+		if (!pApp) return 0;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return 0;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return 0;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return 0;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return 0; }
+
+
+		uint32_t result = pLot->GetZoneType();
+		WriteToLog(result, cX, cY);
+		return result;
+
+	}
+	uint32_t GetLotFlagsAtCellPosition(uint32_t cX, uint32_t cY) //[OK]
+	{
+		// should be a valid LOT
+		cISC4AppPtr pApp;
+		if (!pApp) return 0;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return 0;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return 0;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return 0;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return 0; }
+
+		uint32_t flags = pLot->GetFlags();
+
+		uint32_t st = pLot->GetState();
+		WriteToLog(flags, st, pLot->GetCondition(), cX, cY);
+		return flags;
+
+	}
+	void PrintAllLotFlags()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+				GetLotFlagsAtCellPosition(i, j);
+
+			}
+		}
+
+	}
+	void PrintAllZoneTypes()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+				GetZoneTypeAtCellPosition(i, j);
+
+			}
+		}
+
+	}
+	// not working with road, & other stuff
+	// TRY TO HOOK IF A LOT CAN BE PLOPPED
+
+
+	void PrintAllLotID()
+	{
+
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+				GetLotIDAtCellPosition(i, j);
+
+			}
+		}
+
+
+	}
+
+	uint32_t GetLotPriceTest(uint32_t cX, uint32_t cY) // probablement le cout mensuel . 
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return 0;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return 0;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return 0;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return 0;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return 0; }
+
+		return pLot->GetLandValue(); // probably le cout mensuel ( j'obtienet 52 ) 
+	}
+
+
+	void DemolishLotAtCellPosition(uint32_t cX, uint32_t cY, bool _instant = false)
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return; }
+
+		cISC4BuildingDevelopmentSimulator* pBDevSim = pCity->GetBuildingDevelopmentSimulator();
+		if (!pBDevSim) return;
+
+		cISC4LotDeveloper* pDeveloper = pBDevSim->GetLotDeveloper();
+		if (!pDeveloper) return;
+
+		pDeveloper->StartDemolishLot(pLot);
+		if (_instant)
+		{
+			pDeveloper->EndDemolishLot(pLot);
+		}
+
+	}
+
+	void ExplodeLotAtCellPosition(uint32_t cX, uint32_t cY, bool feu = true)
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return; }
+
+		cISC4BuildingDevelopmentSimulator* pBDevSim = pCity->GetBuildingDevelopmentSimulator();
+		if (!pBDevSim) return;
+
+		cISC4LotDeveloper* pDeveloper = pBDevSim->GetLotDeveloper();
+		if (!pDeveloper) return;
+
+		pDeveloper->ExplodeLot(pLot, feu);
+	}
+
+
+	void TestHackyLot(uint32_t x, uint32_t y) // will try with a low residential 
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(x, y, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return; }
+		WriteToLog(pLot->GetZoneType());
+		WriteToLogB("ZoneType");
+		WriteToLog(pLot->GetZoneType());
+		WriteToLogB("Iterate");
+		int8_t* ptr = (int8_t*)pLot;
+		uint32_t zt = pLot->GetZoneType();
+		/*
+		for (int i = 0 ; i < 600 ; i ++ )
+		{
+			ptr += 1;
+			//WriteToLog(*ptr);
+			if ( *ptr == zt)
+			{
+				WriteToLogB("found at :  +");
+				WriteToLog(i);
+				WriteToLog(*ptr);
+				//break;
+			}
+		}*/
+		// this is ptr + 128 !!! 
+		ptr += 129;
+		WriteToLogB("try to change zone type now!!! ");
+		*ptr = 1;
+		WriteToLogB("check now the byte aha: ");
+		WriteToLog(pLot->GetZoneType());
+		// should refered to zone type
+		// create a lot to see if it is possible
+
+
+	}
+
+	bool Experimental_PutLDResidentialB(uint32_t dX, uint32_t dY, uint32_t w = 1, uint32_t h = 1, uint32_t facing = 0)
+	{
+		//BuildPlotAtPosition(30, 30, 0x30000760, false);
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		cISC4Lot* pLot = NULL;
+
+		if (pLotManager->CreateLot(dX, dY, w, h, facing, pLot)) // mettre un eolienne a 0 0 ( sX et sY sont les dimensions -  )
+		{
+			int8_t* ptr = (int8_t*)pLot; // set it low residential
+			ptr += 129;
+			*ptr = 1; // 1 is residential low
+			pLot->SetFlags(16); // growable ( empty ) : 16 - wateredpowerd etc. 
+			// WE NEED TO ABSOLUTELY CHANGE SIMGRID TO  MAKE IT PLOPPABLE
+
+		}
+		pLotManager->Release();
+		return true;
+	}
+	bool Experimental_PutZone(uint32_t dX, uint32_t dY, uint32_t facing, uint32_t zoneType)
+	{
+		//BuildPlotAtPosition(30, 30, 0x30000760, false);
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		cISC4Lot* pLot = pLotManager->GetLot(dX, dY, false);
+
+		if (pLot) // mettre un eolienne a 0 0 ( sX et sY sont les dimensions -  )
+		{
+			int8_t* ptr = (int8_t*)pLot; // set it low residential
+			ptr += 129;
+			*ptr = zoneType; // 1 is residential low
+			pLot->SetFlags(16); // growable ( empty ) : 16 - wateredpowerd etc. 
+			pLot->SetFacing(facing);
+			// WE NEED TO ABSOLUTELY CHANGE SIMGRID TO  MAKE IT PLOPPABLE
+
+		}
+		pLotManager->Release();
+		return true;
+	}
+
+	void PrintWholeArray(int32_t x, int32_t y)
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(x, y, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		int8_t* ptr = (int8_t*)pLot;
+
+		for (int i = 0; i < 1000; i++)
+		{
+			ptr += 1;
+			WriteToLog(*ptr);
+
+		}
+
+	}
+
+	void TestSimGrid()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+
+		int32_t* zDPnt = (int32_t*)pCity->GetZoneManager();
+
+
+		WriteToLogB("-_-_-_-_-_-_-result at pointer: -_-_-_-_-_-_-_-");
+		;
+		WriteToLog((uint32_t)zDPnt);
+		for (int i = 0; i < 400; i++)
+		{
+			//zDPnt+=1;  // augmenter de 4 // working 4 by 4
+			//WriteToLog(*zDPnt);
+		}
+		zDPnt += 18; // this is pointer +4 to memset  // this is 99% sure + 18 is ok 
+		WriteToLog(*zDPnt);
+		int8_t* gridpointer = reinterpret_cast<int8_t*>(*zDPnt); // ok with 32_t
+		gridpointer + 18; // + 18 seem fare to star data value
+		WriteToLog((uint32_t)zDPnt);
+
+		WriteToLog((int8_t)gridpointer);
+		WriteToLogB("-_-_-_-_-_-_--_-_-_-_-_-_-_-");
+		for (int i = 0; i < 16000; i++) {
+			gridpointer += 1;  // augmenter de 4 // working 4 by 4
+			WriteToLog(*gridpointer);
+		}
+		uint32_t* ctP = (uint32_t*)pCity;
+		uint32_t* omP = (uint32_t*)pCity->GetOccupantManager(); // pointer
+		uint32_t* psP = (uint32_t*)pCity->GetPollutionSimulator(); // pointer
+		uint32_t* bsP = (uint32_t*)pCity->GetBudgetSimulator(); // pointer
+		// zone manager have a pointer to zone view sim grid
+		// + 19 is really intriging !!!!! 
+		WriteToLogB("pointeur results:");
+		WriteToLog((uint32_t)ctP, (uint32_t)omP, (uint32_t)psP, (uint32_t)bsP);
+
+
+		WriteToLogB("some grid pointers:");
+		//WriteToLog((uint32_t)sg1P, (uint32_t)sg2P, (uint32_t)sg3P);
+	}
+	void GetGridZoneViewB()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		int32_t* zDPnt = (int32_t*)pCity->GetZoneManager();
+		zDPnt += 18; // this is the pointer
+		int8_t* gridpointer = reinterpret_cast<int8_t*>(*zDPnt); // should now increment by 
+		// we start at crc (+4,+4,+2,+1,+40) 
+		gridpointer += 51; // jump all the bytes to data array
+		for (int i = 0; i < 16000; i++)
+		{
+			WriteToLog(*gridpointer);
+			gridpointer++;
+		}
+
+
+	}
+	void SimGrid8FromPollutionGrid() // CA MARCGHE. Get Cell Value fonctionne. Maintenant nous devons trouver la methode pour set et pas get
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		cISC4PollutionSimulator* psim = pCity->GetPollutionSimulator();
+		cISC4SimGrid<short>* pGrid = psim->GetPollutionGrid(3);
+
+		int32_t* zDPnt = (int32_t*)pCity->GetZoneManager();
+		zDPnt += 18; // this is the pointer
+		int32_t* gridpointer = reinterpret_cast<int32_t*>(*zDPnt); // really start at memory - 1 
+
+		cISC4SimGrid<int8_t>* test = (cISC4SimGrid<int8_t>*)gridpointer; // test with sim8_t
+		WriteToLogB("start reading cell value");
+		for (int x = 0; x < 128; x++)
+		{
+			for (int y = 0; y < 128; y++)
+			{
+			//	WriteToLog(test->GetTractValue(x, y), x, y);
+				//if (test->SetTractValue(x, y, 7)) { WriteToLogB("write ok"); }
+				 // this is not working. need to force it . 
+				test->SetTractValue(x, y, 7);
+
+				WriteToLog(test->GetCellValue(x, y), test->GetTractValue(x, y), x, y); // tract and cell value return the same. SetTractValue not working
+			}
+		}
+		WriteToLogB("start reading raw values");
+		int8_t* RawPointer = (int8_t*)test;
+		for (int x = 0; x < 128; x++)
+		{
+			for (int y = 0; y < 128; y++)
+			{
+				
+				WriteToLog(*RawPointer, x, y); // tract and cell value return the same
+				RawPointer+=4;
+			}
+		}
+
+
+	}
+
+	void GetGridZoneView(uint32_t x, uint32_t y, int offset)
+	{
+
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		int32_t* zDPnt = (int32_t*)pCity->GetZoneManager();
+		zDPnt += 18; // this is the pointer
+		int32_t* gridpointer = reinterpret_cast<int32_t*>(*zDPnt); // really start at memory - 1 
+		gridpointer--; //(-4)
+		//-1
+		uint32_t unknownS = *gridpointer; // size ?
+		gridpointer++;
+		uint32_t unknown = *gridpointer; // crc?
+		gridpointer++;
+		uint32_t memory_address = *gridpointer;
+		gridpointer++;
+		uint32_t Major_version = *gridpointer;
+		gridpointer++;
+		uint32_t Unknown_1 = *gridpointer;
+		gridpointer++;
+		uint32_t Type_ID = *gridpointer;
+		gridpointer++;
+		uint32_t Data_ID = *gridpointer;
+		gridpointer++;
+		uint32_t Resolution = *gridpointer;
+		gridpointer++;
+		uint32_t Resolution_power = *gridpointer;
+		gridpointer++;
+		uint32_t X_Size = *gridpointer;
+		gridpointer++;
+		uint32_t Y_Size = *gridpointer;
+		gridpointer++;
+		uint32_t Unknown_6 = *gridpointer;
+		gridpointer++;
+		uint32_t Unknown_7 = *gridpointer;
+		gridpointer++;
+		uint32_t Unknown_8 = *gridpointer;
+		gridpointer++;
+		uint32_t Unknown_9 = *gridpointer;
+		gridpointer++; // +4 
+		WriteToLogB("-_-_-_-_- simgrid ?-_-_-_-_- ");
+		WriteToLogB("memory_address");
+		WriteToLog(memory_address, offset);		WriteToLogB("Major_version");
+		WriteToLog(Major_version, offset);		WriteToLogB("Unknown_1");
+		WriteToLog(Unknown_1, offset);		WriteToLogB("Type_ID");
+		WriteToLog(Type_ID, offset);		WriteToLogB("Data_ID");
+		WriteToLog(Data_ID, offset);		WriteToLogB("Resolution");
+		WriteToLog(Resolution, offset);		WriteToLogB("Resolution_power");
+		WriteToLog(Resolution_power, offset);		WriteToLogB("X_Size");
+		WriteToLog(X_Size, offset);		WriteToLogB("Y_Size");
+		WriteToLog(Y_Size, offset);		WriteToLogB("Unknown_6");
+		WriteToLog(Unknown_6, offset);		WriteToLogB("Unknown_7");
+		WriteToLog(Unknown_7, offset);		WriteToLogB("Unknown_8");
+		WriteToLog(Unknown_8, offset);		WriteToLogB("Unknown_9");
+		WriteToLog(Unknown_9, offset);
+		return; // will compare stuff here
+		uint32_t count = X_Size * Y_Size;
+		WriteToLogB("count & offset");
+		WriteToLog(count, offset);
+		WriteToLogB("____");
+
+		signed char *dataPointer = reinterpret_cast<signed char*>(*gridpointer);
+		dataPointer += offset;
+		std::vector<signed char> data;
+		for (int i = 0; i < count; i++)
+		{
+
+			data.push_back(*dataPointer);
+			WriteToLog(*dataPointer);
+			dataPointer++;
+		}
+		int8_t result = data[(x*Y_Size) + y];
+		WriteToLog(result, (x*Y_Size) + y);
+		// now try to do some get 
+
+
+	}
+
+	bool DoHackySuperLot()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+
+
+
+				cISC4Lot* pLot = NULL;
+
+				if (pLotManager->CreateLot(i, j, 1, 1, 0, pLot)) // mettre un eolienne a 0 0 ( sX et sY sont les dimensions -  )
+				{
+					int8_t* ptr = (int8_t*)pLot; // set it low residential
+					ptr += 129;
+					*ptr = 1; // 1 is residential low
+					pLot->SetFlags(16); // growable ( empty ) : 16 - wateredpowerd etc. 
+					// WE NEED TO ABSOLUTELY CHANGE SIMGRID TO  MAKE IT PLOPPABLE
+
+				}
+				//std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+			}
+		}
+		pLotManager->Release();
+	}
+
+	bool ResetHackySuperLot()
+	{
+
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return false;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return false;
+
+		for (uint32_t i = 0; i < pCity->CellCountX(); i++) {
+			for (uint32_t j = 0; j < pCity->CellCountZ(); j++) {
+
+				cISC4Lot* pLot = pLotManager->GetLot(i, j, false);
+				if (pLot)
+				{
+					int8_t* ptr = (int8_t*)pLot; // set it low residential
+					ptr += 129;
+					*ptr = 0; // reset
+					pLot->SetFlags(0); // growable ( empty ) : 16 - wateredpowerd etc. 
+				}
+
+			}
+		}
+		pLotManager->Release();
+	}
+
+	void SetLotAltitudeAtCellPosition(uint32_t cX, uint32_t cY, float altitude)
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+		cISC4LotManager* pLotManager = pCity->GetZoneDeveloper();
+		if (!pLotManager) return;
+		if (!pLotManager->QueryInterface(kGZIID_cISC4LotManager, (void**)&pLotManager)) return;
+
+		cISC4Lot* pLot = pLotManager->GetLot(cX, cY, false); // Can't get the lot if it is a residential Zone, Road or other stuff
+		if (!pLot) { pLotManager->Release(); return; }
+		float alt = pLot->GetAltitude();
+		WriteToLog(alt);
+		pLot->SetAltitude(altitude); // semble ne rien faire
+	}
+
+	void ScanTerrainPointer(int offset) {
+
+		cISC4AppPtr pApp;
+		if (!pApp) return;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return;
+
+		int32_t* tPointer = (int32_t*)pCity->GetTerrain(); // try with float 32 
+		tPointer += offset;
+		for (int i = 0; i < 20000; i++) {
+
+			WriteToLog(*tPointer, offset); // probably a float32 ? altitude
+			tPointer++;
+		}
+
+	}
+
+	bool TestFullRedraw()
+	{
+		cISC4AppPtr pApp;
+		if (!pApp) return false;
+
+		cISC4City* pCity = pApp->GetCity();
+		if (!pCity) return false;
+
+		cIGZWin* pParentWin = pApp->GetMainWindow();
+		if (!pParentWin) return false;
+
+		pParentWin = pParentWin->GetChildWindowFromID(kGZWin_WinSC4App);
+		if (!pParentWin) return false;
+
+		cISC4View3DWin* pWin = NULL;
+		if (!pParentWin->GetChildAs(kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, (void**)&pWin)) return false;
+
+
+
+		cISC43DRender* renderer = pWin->GetRenderer();
+		if (!renderer) { return false; }
+		renderer->ForceFullRedraw();
+	}
+	//-_-_-_-_-_-_-_-_-_-_-_-_-_-_-__-_-_-_-_ ......................................... -_-_-_-_-_-_-_-_-_-_-_-_-_-_-
+	//-_-_-_-_-_-_-_-_-_-_-_-_-_-_-__-_-_-_-_ J ECRIS MON CODE DANS LA FONCTION PROGRAM -_-_-_-_-_-_-_-_-_-_-_-_-_-_-
+	//-_-_-_-_-_-_-_-_-_-_-_-_-_-_-__-_-_-_-_ ......................................... -_-_-_-_-_-_-_-_-_-_-_-_-_-_-
+	void Program() {
+		int nb_alea;
+		for (size_t n = 1; n < 120; n++) {
+			for (size_t i = 0; i < 30; i++) {
+				nb_alea = (rand() % 120) + 1;
+
+				Test_NetBuildCmd(nb_alea, n, 0x30000072, 0);
+				Sleep(100);
+				//BuildPlotAtPosition(nb_alea, n, 0x30000072, false, false, 0);
+			};
+		};
+		for (size_t n = 1; n < 120; n++) {
+			for (size_t i = 0; i < 40; i++) {
+				nb_alea = (rand() % 120) + 1;
+				//for (size_t i = 0; i < 120; i++)
+				//{
+				Test_NetBuildCmd(nb_alea, n, 0x300000c1, 0);
+				Sleep(100);
+				//BuildPlotAtPosition(n, nb_alea, 0x300000c1, false, false, 0);
+			};
+		};
+		//for (size_t n = 1; n < 120; n++) {
+		for (size_t i = 8; i < 90; i++) {
+			nb_alea = (rand() % 90) + 1;
+			for (size_t i = 0; i < 120; i++)
+			{
+				Test_NetBuildCmd(nb_alea, i, 0x8ac40717, 0);
+				Sleep(100);
+				//BuildPlotAtPosition(nb_alea, i, 0x8ac40717, false, false, 0);
+			};
+		};
+	}
+	void ProgramC()
+	{
+		SimGrid8FromPollutionGrid(); // completment ok mais ne change rien
+	}
+
+
+
+	void ProgramB()
+	{
+
+		// MY LAST TRY WILL BE TO PUT 2 LD RES OF THE SAME SIZE . ONE PUT MANUALLY. ONE PUT FROM CODE. AND COMPARE FIRST 1000 OCTETS
+		//BuildPlotAtPosition(20, 20, bID.Wind_Power, false); 
+		//PrintAllLotID();
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+		GetGridZoneViewB();
+		/*
+		//DoHackySuperLot();
+		//ResetHackySuperLot();
+
+
+		Experimental_PutZone(20, 20, 0, 1);
+		Experimental_PutZone(30, 20, 0, 2);
+		Experimental_PutZone(31, 20, 0, 2);
+		Experimental_PutZone(32, 20, 0, 2);
+		Experimental_PutZone(40, 20, 0, 7);
+		Experimental_PutZone(41, 20, 0, 7);
+		*/
+		//DuplicateBuildingB(49, 50, 50, 50);
+		//Experimental_PutLDResidentialB(20, 20, 40, 40);
+		//TestSimGrid();
+		/*
+		for (int x = 20; x < 30 ; x++ )
+		{
+			Experimental_PutLDResidentialB(x, 20, 1, 2, 0);
+
+
+		}*/
+		for (int i = -10; i < 10; i++)
+		{
+			GetGridZoneView(28, 20, i);
+		}
+
+		//TestHackyLot(33,43);
+		//Experimental_PutLDResidentialB(50, 60);
+		//GetLotFlagsAtCellPosition(44, 66);// 42 43  ---> 16 1 0 42 43 quand la ferme. 16 1 1 quand residential ...
+		//BuildPlotAtPosition(30, 30, 0x30000760, false);
+		/*
+		WriteToLogB("-_-_-_-_BUILD ID -_-_-_-");
+		PrintAllLotID();
+		WriteToLogB("-_-_-_-_ZONE TYPES -_-_-_-");
+		PrintAllZoneTypes();
+		WriteToLogB("-_-_-_-_FLAGS -_-_-_-");
+		PrintAllLotFlags();
+		*/
+
+		//PrintAllZoneTypes();
+		//BuildPlotAtPosition(20, 20, bID.Wind_Power, false);
+		//TestHere(0, 3, 0, 0);
+		//uint32_t price = GetLotPriceTest(20, 20); 
+		//WriteToLog(price);
+		return;
+
+		// some wait function;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(500)); // pause the entire process actually ... 
+
+		// disabling mouse event
+		GetCellMatrix(); // ok mais nous devons attendre un peu ... //should disable the thread here 
+		//BuildPlotAtPosition(20, 20, 0x8a32e4cb, false); // put an eolienne
+		BuildPlotAtPosition(20, 20, bID.Wind_Power, false);
+		PutLDResidentialZone(60, 60, 6, 6);
+		PutLDResidentialZone(40, 40, 6, 6);
+		PutLDResidentialZone(40, 60, 6, 6);
+		PutLDResidentialZone(60, 40, 6, 6);
+		//BlockInput(false);
+		//SetCursorAtCellPosition(20, 40); // need to center the view
+		UnLockCursor();
+
+	}
+
+protected:
+	cRZPoint m_sMousePos;
+	cRZPoint _cellMatrix[200][200];
+	CellID _mapData[200][200]; // crash the game
+	Building bID;
+};
+
+extern cGZExtraExtraCheatsPluginCOMDirector* extracheatspointer = NULL;
+
+// You need to replace the director returned here for the game and this DLL
+// to use the right director. This is the only place that it's necessary to
+// do so.
+cRZCOMDllDirector* RZGetCOMDllDirector() {
+	static cGZExtraExtraCheatsPluginCOMDirector sDirector;
+	extracheatspointer = &sDirector;
+	return &sDirector;
+}
